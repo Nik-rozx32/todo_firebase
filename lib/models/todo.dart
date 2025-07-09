@@ -17,7 +17,7 @@ class Todo {
         id: id,
         text: data['text'],
         isDone: data['isDone'],
-        timestamp: data['timestamp']);
+        timestamp: data['timestamp'] ?? Timestamp.now());
   }
 
   Map<String, dynamic> toMap() {
