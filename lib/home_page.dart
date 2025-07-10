@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'models/todo.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+enum FilterOption { all, completed, incomplete }
+
 class TodoList extends StatefulWidget {
   const TodoList({Key? key}) : super(key: key);
 
@@ -11,7 +13,7 @@ class TodoList extends StatefulWidget {
 
 class _TodoListState extends State<TodoList> {
   final _controller = TextEditingController();
-  List<Todo> todoList = [];
+  FilterOption _filter = FilterOption.all;
 
   void _toggleTodo(Todo todo) {
     FirebaseFirestore.instance.collection('todos').doc(todo.id).update({
@@ -21,6 +23,22 @@ class _TodoListState extends State<TodoList> {
 
   void _deleteTodo(String id) {
     FirebaseFirestore.instance.collection('todos').doc(id).delete();
+  }
+
+  Stream<QuerySnapshot> _getFilteredStream() {
+    final collection = FirebaseFirestore.instance
+        .collection('todos')
+        .orderBy('timestamp', descending: false);
+
+    switch (_filter) {
+      case FilterOption.completed:
+        return collection.where('isDone', isEqualTo: true).snapshots();
+      case FilterOption.incomplete:
+        return collection.where('isDone', isEqualTo: false).snapshots();
+      case FilterOption.all:
+      default:
+        return collection.snapshots();
+    }
   }
 
   void _addTodo(String text) async {
@@ -48,13 +66,16 @@ class _TodoListState extends State<TodoList> {
                   child: TextField(
                     controller: _controller,
                     decoration: InputDecoration(
-                        labelText: 'Enter todo',
-                        enabledBorder: OutlineInputBorder(
-                            borderSide: const BorderSide(color: Colors.grey),
-                            borderRadius: BorderRadius.circular(12)),
-                        focusedBorder: OutlineInputBorder(
-                            borderSide: const BorderSide(color: Colors.blue),
-                            borderRadius: BorderRadius.circular(12))),
+                      labelText: 'Enter todo',
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: const BorderSide(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: const BorderSide(color: Colors.blue),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 5),
@@ -65,12 +86,41 @@ class _TodoListState extends State<TodoList> {
               ],
             ),
           ),
+
+          // Dropdown for filtering
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: DropdownButton<FilterOption>(
+              value: _filter,
+              isExpanded: true,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _filter = value;
+                  });
+                }
+              },
+              items: const [
+                DropdownMenuItem(
+                  value: FilterOption.all,
+                  child: Text('All Tasks'),
+                ),
+                DropdownMenuItem(
+                  value: FilterOption.completed,
+                  child: Text('Completed Tasks'),
+                ),
+                DropdownMenuItem(
+                  value: FilterOption.incomplete,
+                  child: Text('Incomplete Tasks'),
+                ),
+              ],
+            ),
+          ),
+
+          // Todo list section
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('todos')
-                  .orderBy('timestamp', descending: false)
-                  .snapshots(),
+              stream: _getFilteredStream(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
@@ -81,10 +131,19 @@ class _TodoListState extends State<TodoList> {
                       doc.data() as Map<String, dynamic>, doc.id);
                 }).toList();
 
+                // Filter based on dropdown
+                final filteredTodos = _filter == FilterOption.all
+                    ? todos
+                    : todos
+                        .where((todo) => _filter == FilterOption.completed
+                            ? todo.isDone
+                            : !todo.isDone)
+                        .toList();
+
                 return ListView.builder(
-                  itemCount: todos.length,
+                  itemCount: filteredTodos.length,
                   itemBuilder: (context, index) {
-                    final todo = todos[index];
+                    final todo = filteredTodos[index];
                     return ListTile(
                       title: Text(
                         todo.text,
